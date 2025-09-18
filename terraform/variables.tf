@@ -7,24 +7,19 @@ variable "location" {
   default = "europe-west1"
 }
 
-variable "google_oauth_client_id" {
-  description = "Google OAuth Client Id"
-}
-
-variable "google_oauth_client_secret" {
-  description = "Google OAuth Client Secret"
-}
-
 variable "mcc_id" {
   description = "Google Ads MCC account ID. Set it without hyphens XXXXXXXXXX"
 }
 
-variable "google_ads_api_token" {
-  description = "The developer token from Google Ads"
+variable "container_image" {
+  description = "The full container image path to deploy to Cloud Run"
+  type        = string
+  default     = "gcr.io/vdc200007-search-prod/negative_keyword_cleaner:improved-llm-v1"
 }
 
-variable "openai_api_key" {
-  description = "The API Key from OpenAI (optional)"
+variable "run_service_account_email" {
+  description = "Service account email for Cloud Run runtime"
+  type        = string
 }
 
 

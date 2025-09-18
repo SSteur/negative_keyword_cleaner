@@ -9,22 +9,10 @@ resource "null_resource" "enable_cloud_apis" {
 #
 
 resource "google_service_account" "main" {
-  account_id   = "neg-keywords-cleaner"
+  account_id   = "neg-keywords-cleaner-test"
   display_name = "Negative Keywords Cleaner Service Account"
 
   depends_on = [null_resource.enable_cloud_apis]
-}
-
-resource "google_project_iam_member" "logs_writer" {
-  project = var.project_id
-  role    = "roles/logging.logWriter"
-  member  = "serviceAccount:${google_service_account.main.email}"
-}
-
-resource "google_project_iam_member" "aiplatform_user" {
-  project = var.project_id
-  role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.main.email}"
 }
 
 ##
@@ -39,17 +27,17 @@ resource "random_id" "bucket_main_suffix" {
 }
 
 resource "google_storage_bucket" "main" {
-  name                        = "neg-kws-cleaner-${random_id.bucket_main_suffix.hex}"
+  name                        = "neg-kws-cleaner-test-${random_id.bucket_main_suffix.hex}"
   location                    = var.location
   storage_class               = "STANDARD"
   force_destroy               = true
   uniform_bucket_level_access = true
-  depends_on = [null_resource.enable_cloud_apis]
+  depends_on                  = [null_resource.enable_cloud_apis]
 }
 resource "google_storage_bucket_iam_member" "member" {
   bucket = google_storage_bucket.main.name
   role   = "roles/storage.admin"
-  member = "serviceAccount:${google_service_account.main.email}"
+  member = "serviceAccount:${var.run_service_account_email}"
 }
 
 ##
@@ -59,39 +47,24 @@ resource "google_storage_bucket_iam_member" "member" {
 resource "google_project_service" "aiplatform" {
   service            = "aiplatform.googleapis.com"
   disable_on_destroy = false
-  depends_on = [null_resource.enable_cloud_apis]
+  depends_on         = [null_resource.enable_cloud_apis]
 }
 
 resource "google_project_service" "generativeai" {
   service            = "generativelanguage.googleapis.com"
   disable_on_destroy = false
-  depends_on = [null_resource.enable_cloud_apis]
+  depends_on         = [null_resource.enable_cloud_apis]
 }
 
 resource "google_project_service" "apikeys" {
   service            = "apikeys.googleapis.com"
   disable_on_destroy = false
-  depends_on = [null_resource.enable_cloud_apis]
+  depends_on         = [null_resource.enable_cloud_apis]
 }
 
 resource "random_id" "vertexai_apikey_suffix" {
   byte_length = 8
 }
-
-resource "google_apikeys_key" "vertexai" {
-  name         = "negcleaner-gemini-${random_id.vertexai_apikey_suffix.hex}"
-  display_name = "Negative Keywords Cleaner - Generative AI"
-  project      = var.project_id
-
-  restrictions {
-    api_targets {
-      service = "generativelanguage.googleapis.com"
-    }
-  }
-
-  depends_on = [google_project_service.apikeys]
-}
-
 ##
 # Google Ads
 #
@@ -99,7 +72,7 @@ resource "google_apikeys_key" "vertexai" {
 resource "google_project_service" "googleads" {
   service            = "googleads.googleapis.com"
   disable_on_destroy = false
-  depends_on = [null_resource.enable_cloud_apis]
+  depends_on         = [null_resource.enable_cloud_apis]
 }
 
 ##
@@ -109,7 +82,7 @@ resource "google_project_service" "googleads" {
 resource "google_project_service" "cloud_run" {
   service            = "run.googleapis.com"
   disable_on_destroy = false
-  depends_on = [null_resource.enable_cloud_apis]
+  depends_on         = [null_resource.enable_cloud_apis]
 }
 
 resource "google_cloud_run_v2_service" "default" {
@@ -120,26 +93,12 @@ resource "google_cloud_run_v2_service" "default" {
 
   template {
     containers {
-      image = "gcr.io/${var.project_id}/negatives:v1"
+      image = var.container_image
+
 
       env {
         name  = "port"
         value = "8080"
-      }
-
-      env {
-        name  = "OAUTH_CLIENT_ID"
-        value = var.google_oauth_client_id
-      }
-
-      env {
-        name  = "OAUTH_CLIENT_SECRET"
-        value = var.google_oauth_client_secret
-      }
-
-      env {
-        name  = "GOOGLE_VERTEXAI_API_KEY"
-        value = google_apikeys_key.vertexai.key_string
       }
 
       env {
@@ -153,15 +112,37 @@ resource "google_cloud_run_v2_service" "default" {
       }
 
       env {
-        name  = "GOOGLE_ADS_API_TOKEN"
-        value = var.google_ads_api_token
+        name = "OAUTH_WEB_JSON"
+        value_source {
+          secret_key_ref {
+            secret  = "nk-cleaner-test-oauth-web-json"
+            version = "latest"
+          }
+        }
       }
 
+      # Google Ads API token
       env {
-        name  = "OPENAI_API_KEY"
-        value = var.openai_api_key
+        name = "GOOGLE_ADS_API_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = "nk-cleaner-test-google-ads-api-token"
+            version = "latest"
+          }
+        }
       }
-      
+
+      # Gemini key
+      env {
+        name = "GOOGLE_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = "nk-cleaner-test-gemini-key"
+            version = "latest"
+          }
+        }
+      }
+
       resources {
         limits = {
           cpu    = "2"
@@ -170,7 +151,7 @@ resource "google_cloud_run_v2_service" "default" {
       }
     }
     timeout          = "1800s"
-    service_account  = google_service_account.main.email
+    service_account  = var.run_service_account_email
     session_affinity = true
   }
 
