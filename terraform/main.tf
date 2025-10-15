@@ -68,29 +68,6 @@ resource "google_project_service" "generativeai" {
   depends_on = [null_resource.enable_cloud_apis]
 }
 
-resource "google_project_service" "apikeys" {
-  service            = "apikeys.googleapis.com"
-  disable_on_destroy = false
-  depends_on = [null_resource.enable_cloud_apis]
-}
-
-resource "random_id" "vertexai_apikey_suffix" {
-  byte_length = 8
-}
-
-resource "google_apikeys_key" "vertexai" {
-  name         = "negcleaner-gemini-${random_id.vertexai_apikey_suffix.hex}"
-  display_name = "Negative Keywords Cleaner - Generative AI"
-  project      = var.project_id
-
-  restrictions {
-    api_targets {
-      service = "generativelanguage.googleapis.com"
-    }
-  }
-
-  depends_on = [google_project_service.apikeys]
-}
 
 ##
 # Google Ads
@@ -138,11 +115,6 @@ resource "google_cloud_run_v2_service" "default" {
       }
 
       env {
-        name  = "GOOGLE_VERTEXAI_API_KEY"
-        value = google_apikeys_key.vertexai.key_string
-      }
-
-      env {
         name  = "DEFAULT_BUCKET_NAME"
         value = google_storage_bucket.main.name
       }
@@ -161,6 +133,12 @@ resource "google_cloud_run_v2_service" "default" {
         name  = "OPENAI_API_KEY"
         value = var.openai_api_key
       }
+
+      env {
+        name = "GOOGLE_API_KEY"
+        value = var.google_api_key 
+      }
+
       
       resources {
         limits = {
